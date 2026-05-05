@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  expense-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-expense-bot
+    restart: unless-stopped
+
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DB_PATH=/app/data/expenses.db
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Ho_Chi_Minh
+
+    volumes:
+      - expense_data:/app/data
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/expenses.db')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - bot_network
+
+volumes:
+  expense_data:
+    driver: local
+
+networks:
+  bot_network:
+    driver: bridge
