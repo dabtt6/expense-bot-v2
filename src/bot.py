@@ -14,6 +14,8 @@ from handlers import (
     manage_goals, handle_goal_select, handle_goal_name, handle_goal_target, handle_goal_deadline,
     manage_recurring, handle_rec_action, handle_rec_amount, handle_rec_desc, handle_rec_day,
     settings, handle_settings,
+    manage_debt, handle_debt_action, handle_debt_person,
+    handle_debt_amount, handle_debt_desc, handle_debt_due,
 )
 from scheduler import (
     send_daily_summary, send_weekly_summary,
@@ -36,6 +38,7 @@ logger = logging.getLogger(__name__)
     REC_TYPE, REC_CATEGORY, REC_AMOUNT, REC_DESC, REC_DAY, REC_DELETE,
     SETTINGS_SELECT,
 ) = range(20)
+DEBT_TYPE, DEBT_PERSON, DEBT_AMOUNT, DEBT_DESC, DEBT_DUE, DEBT_ACTION = 20, 21, 22, 23, 24, 25
 
 TIMEOUT = 300
 
@@ -55,6 +58,7 @@ def all_fallbacks():
         CommandHandler("muctieu", manage_goals),
         CommandHandler("dinhky", manage_recurring),
         CommandHandler("caidat", settings),
+        CommandHandler("no", manage_debt),
         CommandHandler("start", start),
         CommandHandler("help", help_command),
     ]
@@ -85,6 +89,7 @@ async def set_commands(application):
         ("caidat",      "⚙️ Cài đặt thông báo"),
         ("xoa",         "🗑️ Xóa giao dịch"),
         ("xuatfile",    "📁 Xuất file CSV"),
+        ("no",          "💳 Quản lý nợ"),
         ("help",        "❓ Trợ giúp"),
     ])
 
@@ -201,6 +206,19 @@ def main():
     app.add_handler(goal_conv)
     app.add_handler(recurring_conv)
     app.add_handler(settings_conv)
+
+    debt_conv = make_conv(
+        entry_points=[CommandHandler("no", manage_debt)],
+        states={
+            DEBT_ACTION: [CallbackQueryHandler(handle_debt_action, pattern="^debt_|^dpaid_")],
+            DEBT_PERSON: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_person)],
+            DEBT_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_amount)],
+            DEBT_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_desc)],
+            DEBT_DUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_due)],
+        },
+        name="debt",
+    )
+    app.add_handler(debt_conv)
 
     # Quick add - nhắn thẳng số tiền
     app.add_handler(MessageHandler(

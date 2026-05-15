@@ -820,3 +820,185 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("❌ Đã hủy thao tác.")
     return ConversationHandler.END
+
+# ─── /no (Quản lý nợ) ─────────────────────────────────────────────────────────
+
+DEBT_TYPE, DEBT_PERSON, DEBT_AMOUNT, DEBT_DESC, DEBT_DUE, DEBT_ACTION = 20, 21, 22, 23, 24, 25
+
+async def manage_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    summary = db.get_debt_summary(user.id)
+
+    owe = summary["owe"]
+    lend = summary["lend"]
+
+    lines = ["💳 <b>Quản lý nợ</b>\n"]
+    lines.append(f"🔴 Tôi đang nợ: <b>{fmt(owe['total'])}</b> ({owe['count']} khoản)")
+    lines.append(f"🟢 Người khác nợ tôi: <b>{fmt(lend['total'])}</b> ({lend['count']} khoản)")
+
+    net = lend["total"] - owe["total"]
+    if net >= 0:
+        lines.append(f"\n✅ Thực tế đang được nợ: <b>{fmt(net)}</b>")
+    else:
+        lines.append(f"\n🔴 Thực tế đang nợ ròng: <b>{fmt(abs(net))}</b>")
+
+    keyboard = [
+        [InlineKeyboardButton("🔴 Tôi vay/nợ người khác", callback_data="debt_owe"),
+         InlineKeyboardButton("🟢 Cho người khác vay", callback_data="debt_lend")],
+        [InlineKeyboardButton("📋 Xem danh sách nợ", callback_data="debt_list"),
+         InlineKeyboardButton("✅ Đánh dấu đã trả", callback_data="debt_paid")],
+        [InlineKeyboardButton("🕐 Lịch sử đã trả", callback_data="debt_history")],
+    ]
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+    return DEBT_ACTION
+
+async def handle_debt_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user = update.effective_user
+
+    if query.data in ("debt_owe", "debt_lend"):
+        dtype = "owe" if query.data == "debt_owe" else "lend"
+        context.user_data["debt_type"] = dtype
+        label = "vay/nợ" if dtype == "owe" else "cho vay"
+        await query.edit_message_text(
+            f"👤 Nhập tên người bạn <b>{label}</b>:",
+            parse_mode="HTML"
+        )
+        return DEBT_PERSON
+
+    if query.data == "debt_list":
+        debts = db.get_debts(user.id, paid=0)
+        if not debts:
+            await query.edit_message_text("📭 Không có khoản nợ nào đang mở.")
+            return ConversationHandler.END
+
+        lines = ["📋 <b>Danh sách nợ hiện tại:</b>\n"]
+        for d in debts:
+            icon = "🔴" if d["type"] == "owe" else "🟢"
+            action = "Nợ" if d["type"] == "owe" else "Cho vay"
+            due = f" | Hạn: {d['due_date']}" if d["due_date"] else ""
+            desc = f"\n  📝 {d['description']}" if d["description"] else ""
+            lines.append(
+                f"{icon} <code>#{d['id']}</code> {action} <b>{d['person']}</b>\n"
+                f"  💵 {fmt(d['amount'])}{due}{desc}"
+            )
+
+        await query.edit_message_text("\n\n".join(lines), parse_mode="HTML")
+        return ConversationHandler.END
+
+    if query.data == "debt_paid":
+        debts = db.get_debts(user.id, paid=0)
+        if not debts:
+            await query.edit_message_text("📭 Không có khoản nợ nào cần đánh dấu.")
+            return ConversationHandler.END
+
+        buttons = []
+        for d in debts:
+            icon = "🔴" if d["type"] == "owe" else "🟢"
+            label = f"{icon} #{d['id']} {d['person']} — {fmt(d['amount'])}"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"dpaid_{d['id']}")])
+        buttons.append([InlineKeyboardButton("❌ Hủy", callback_data="dpaid_cancel")])
+
+        await query.edit_message_text(
+            "✅ <b>Chọn khoản đã thanh toán:</b>",
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode="HTML"
+        )
+        return DEBT_ACTION
+
+    if query.data.startswith("dpaid_"):
+        if query.data == "dpaid_cancel":
+            await query.edit_message_text("❌ Đã hủy.")
+            return ConversationHandler.END
+        debt_id = int(query.data.replace("dpaid_", ""))
+        success = db.mark_debt_paid(debt_id, user.id)
+        if success:
+            await query.edit_message_text(f"✅ Đã đánh dấu khoản <code>#{debt_id}</code> là <b>đã trả</b>! 🎉", parse_mode="HTML")
+        else:
+            await query.edit_message_text("❌ Không tìm thấy khoản nợ.")
+        return ConversationHandler.END
+
+    if query.data == "debt_history":
+        debts = db.get_debts(user.id, paid=1)
+        if not debts:
+            await query.edit_message_text("📭 Chưa có khoản nợ nào đã thanh toán.")
+            return ConversationHandler.END
+
+        lines = ["🕐 <b>Lịch sử đã trả:</b>\n"]
+        for d in debts[:10]:
+            icon = "🔴" if d["type"] == "owe" else "🟢"
+            paid_at = datetime.fromisoformat(d["paid_at"]).strftime("%d/%m/%Y") if d["paid_at"] else ""
+            lines.append(
+                f"{icon} {d['person']} — {fmt(d['amount'])}\n"
+                f"  ✅ Trả ngày: {paid_at}"
+            )
+
+        await query.edit_message_text("\n\n".join(lines), parse_mode="HTML")
+        return ConversationHandler.END
+
+    return ConversationHandler.END
+
+async def handle_debt_person(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["debt_person"] = update.message.text.strip()
+    await update.message.reply_text("💰 Nhập số tiền (VD: 500000):")
+    return DEBT_AMOUNT
+
+async def handle_debt_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip().replace(",", "").replace(".", "")
+    try:
+        amount = float(text)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Không hợp lệ. Nhập lại:")
+        return DEBT_AMOUNT
+    context.user_data["debt_amount"] = amount
+    await update.message.reply_text("📝 Nhập ghi chú (hoặc - để bỏ qua):")
+    return DEBT_DESC
+
+async def handle_debt_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    desc = update.message.text.strip()
+    context.user_data["debt_desc"] = None if desc == "-" else desc
+    await update.message.reply_text("📅 Nhập hạn trả (DD/MM/YYYY) hoặc - để bỏ qua:")
+    return DEBT_DUE
+
+async def handle_debt_due(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    text = update.message.text.strip()
+    due_date = None
+    if text != "-":
+        try:
+            datetime.strptime(text, "%d/%m/%Y")
+            due_date = text
+        except ValueError:
+            await update.message.reply_text("❌ Định dạng sai. Nhập DD/MM/YYYY hoặc -:")
+            return DEBT_DUE
+
+    dtype = context.user_data["debt_type"]
+    person = context.user_data["debt_person"]
+    amount = context.user_data["debt_amount"]
+    desc = context.user_data.get("debt_desc")
+
+    did = db.add_debt(user.id, dtype, person, amount, desc, due_date)
+
+    icon = "🔴" if dtype == "owe" else "🟢"
+    action = "Nợ" if dtype == "owe" else "Cho vay"
+    due_text = f"\n📅 Hạn trả: {due_date}" if due_date else ""
+    desc_text = f"\n📝 {desc}" if desc else ""
+
+    await update.message.reply_text(
+        f"{icon} <b>{action} đã lưu #{did}</b>\n\n"
+        f"👤 {person}\n"
+        f"💵 <b>{fmt(amount)}</b>"
+        f"{desc_text}{due_text}\n\n"
+        "Dùng /no để xem tổng quan.",
+        parse_mode="HTML"
+    )
+    context.user_data.clear()
+    return ConversationHandler.END

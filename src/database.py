@@ -325,3 +325,78 @@ def get_all_transactions_csv(user_id):
     """, (user_id,)).fetchall()
     conn.close()
     return rows
+
+# ── Debts ──────────────────────────────────────────────────────────────────────
+
+def init_debt_table():
+    conn = get_connection()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS debts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('owe', 'lend')),
+            person TEXT NOT NULL,
+            amount REAL NOT NULL,
+            description TEXT,
+            due_date TEXT,
+            paid INTEGER DEFAULT 0,
+            paid_at TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+def add_debt(user_id, type_, person, amount, description, due_date=None):
+    init_debt_table()
+    conn = get_connection()
+    cur = conn.execute("""
+        INSERT INTO debts (user_id, type, person, amount, description, due_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, type_, person, amount, description, due_date))
+    conn.commit()
+    did = cur.lastrowid
+    conn.close()
+    return did
+
+def get_debts(user_id, paid=0):
+    init_debt_table()
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT * FROM debts WHERE user_id=? AND paid=?
+        ORDER BY due_date ASC, created_at DESC
+    """, (user_id, paid)).fetchall()
+    conn.close()
+    return rows
+
+def mark_debt_paid(debt_id, user_id):
+    conn = get_connection()
+    cur = conn.execute("""
+        UPDATE debts SET paid=1, paid_at=? WHERE id=? AND user_id=?
+    """, (datetime.now().isoformat(), debt_id, user_id))
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+def delete_debt(debt_id, user_id):
+    conn = get_connection()
+    cur = conn.execute("DELETE FROM debts WHERE id=? AND user_id=?", (debt_id, user_id))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
+
+def get_debt_summary(user_id):
+    init_debt_table()
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT type, COALESCE(SUM(amount),0) as total, COUNT(*) as count
+        FROM debts WHERE user_id=? AND paid=0
+        GROUP BY type
+    """, (user_id,)).fetchall()
+    conn.close()
+    result = {"owe": {"total": 0, "count": 0}, "lend": {"total": 0, "count": 0}}
+    for r in rows:
+        result[r["type"]] = {"total": r["total"], "count": r["count"]}
+    return result
