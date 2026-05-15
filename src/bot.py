@@ -75,22 +75,30 @@ def make_conv(entry_points, states, name):
 
 async def set_commands(application):
     await application.bot.set_my_commands([
-        ("them",        "💸 Thêm chi tiêu"),
+        # Ghi chép
+        ("them",        "💸 Thêm chi tiêu mới"),
         ("thunhap",     "💰 Thêm thu nhập"),
-        ("nhanh",       "⚡ Hướng dẫn nhập nhanh"),
-        ("tomtat",      "📊 Tóm tắt tháng"),
-        ("lichsu",      "📋 Lịch sử giao dịch"),
-        ("thongke",     "📈 Thống kê chi tiết"),
-        ("nganquy",     "💼 Đặt ngân sách"),
-        ("nganquy_xem", "👀 Xem ngân sách"),
-        ("tietkiem",    "🏦 Thêm tiết kiệm"),
-        ("muctieu",     "🎯 Mục tiêu tiết kiệm"),
-        ("dinhky",      "🔁 Chi tiêu định kỳ"),
-        ("caidat",      "⚙️ Cài đặt thông báo"),
-        ("xoa",         "🗑️ Xóa giao dịch"),
-        ("xuatfile",    "📁 Xuất file CSV"),
-        ("no",          "💳 Quản lý nợ"),
-        ("help",        "❓ Trợ giúp"),
+        ("nhanh",       "⚡ Cách nhập nhanh không cần lệnh"),
+        # Báo cáo
+        ("tomtat",      "📊 Tóm tắt tháng hiện tại"),
+        ("hom_nay",     "📅 Hạn mức chi tiêu hôm nay"),
+        ("lichsu",      "📋 10 giao dịch gần nhất"),
+        ("thongke",     "📈 Thống kê 7/30/90/365 ngày"),
+        # Ngân sách
+        ("nganquy",     "💼 Đặt ngân sách theo danh mục"),
+        ("nganquy_xem", "👀 Xem tiến độ ngân sách"),
+        # Tiết kiệm
+        ("tietkiem",    "🏦 Ghi khoản tiết kiệm"),
+        ("muctieu",     "🎯 Tạo & theo dõi mục tiêu"),
+        # Nợ
+        ("no",          "💳 Quản lý nợ & cho vay"),
+        # Tự động
+        ("dinhky",      "🔁 Thiết lập chi tiêu định kỳ"),
+        # Tiện ích
+        ("caidat",      "⚙️ Bật/tắt thông báo tự động"),
+        ("xoa",         "🗑️ Xóa giao dịch sai"),
+        ("xuatfile",    "📁 Xuất toàn bộ dữ liệu CSV"),
+        ("help",        "❓ Hướng dẫn chi tiết"),
     ])
 
 def main():
