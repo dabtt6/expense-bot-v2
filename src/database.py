@@ -400,3 +400,25 @@ def get_debt_summary(user_id):
     for r in rows:
         result[r["type"]] = {"total": r["total"], "count": r["count"]}
     return result
+
+def partial_pay_debt(debt_id, user_id, pay_amount):
+    """Trả một phần nợ, trừ dần. Nếu hết thì tự đánh dấu paid."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM debts WHERE id=? AND user_id=? AND paid=0", (debt_id, user_id)).fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    new_amount = row["amount"] - pay_amount
+    if new_amount <= 0:
+        # Trả hết
+        conn.execute("UPDATE debts SET amount=0, paid=1, paid_at=? WHERE id=?",
+                     (datetime.now().isoformat(), debt_id))
+        conn.commit()
+        conn.close()
+        return {"paid_full": True, "remaining": 0, "original": row["amount"]}
+    else:
+        conn.execute("UPDATE debts SET amount=? WHERE id=?", (new_amount, debt_id))
+        conn.commit()
+        conn.close()
+        return {"paid_full": False, "remaining": new_amount, "original": row["amount"]}

@@ -15,7 +15,7 @@ from handlers import (
     manage_recurring, handle_rec_action, handle_rec_amount, handle_rec_desc, handle_rec_day,
     settings, handle_settings,
     manage_debt, handle_debt_action, handle_debt_person,
-    handle_debt_amount, handle_debt_desc, handle_debt_due,
+    handle_debt_amount, handle_debt_desc, handle_debt_due, handle_debt_partial_pay,
 )
 from scheduler import (
     send_daily_summary, send_weekly_summary,
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
     REC_TYPE, REC_CATEGORY, REC_AMOUNT, REC_DESC, REC_DAY, REC_DELETE,
     SETTINGS_SELECT,
 ) = range(20)
-DEBT_TYPE, DEBT_PERSON, DEBT_AMOUNT, DEBT_DESC, DEBT_DUE, DEBT_ACTION = 20, 21, 22, 23, 24, 25
+DEBT_TYPE, DEBT_PERSON, DEBT_AMOUNT, DEBT_DESC, DEBT_DUE, DEBT_ACTION, DEBT_PART_PAY = 20, 21, 22, 23, 24, 25, 26
 
 TIMEOUT = 300
 
@@ -218,11 +218,12 @@ def main():
     debt_conv = make_conv(
         entry_points=[CommandHandler("no", manage_debt)],
         states={
-            DEBT_ACTION: [CallbackQueryHandler(handle_debt_action, pattern="^debt_|^dpaid_")],
+            DEBT_ACTION: [CallbackQueryHandler(handle_debt_action, pattern="^debt_|^dpaid_|^dpayfull_|^dpaypart_")],
             DEBT_PERSON: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_person)],
             DEBT_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_amount)],
             DEBT_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_desc)],
             DEBT_DUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_due)],
+            DEBT_PART_PAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_debt_partial_pay)],
         },
         name="debt",
     )

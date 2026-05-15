@@ -876,7 +876,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── /no (Quản lý nợ) ─────────────────────────────────────────────────────────
 
-DEBT_TYPE, DEBT_PERSON, DEBT_AMOUNT, DEBT_DESC, DEBT_DUE, DEBT_ACTION = 20, 21, 22, 23, 24, 25
+DEBT_TYPE, DEBT_PERSON, DEBT_AMOUNT, DEBT_DESC, DEBT_DUE, DEBT_ACTION, DEBT_PART_PAY = 20, 21, 22, 23, 24, 25, 26
 
 async def manage_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -970,12 +970,49 @@ async def handle_debt_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text("❌ Đã hủy.")
             return ConversationHandler.END
         debt_id = int(query.data.replace("dpaid_", ""))
+        # Lấy thông tin khoản nợ để hiển thị
+        debts = db.get_debts(user.id, paid=0)
+        debt = next((d for d in debts if d["id"] == debt_id), None)
+        if not debt:
+            await query.edit_message_text("❌ Không tìm thấy khoản nợ.")
+            return ConversationHandler.END
+
+        context.user_data["debt_pay_id"] = debt_id
+        icon = "🔴" if debt["type"] == "owe" else "🟢"
+        action = "nợ" if debt["type"] == "owe" else "cho vay"
+
+        keyboard = [[
+            InlineKeyboardButton("✅ Trả hết toàn bộ", callback_data=f"dpayfull_{debt_id}"),
+            InlineKeyboardButton("💰 Trả một phần", callback_data=f"dpaypart_{debt_id}"),
+        ]]
+        await query.edit_message_text(
+            f"{icon} <b>{debt['person']}</b> — {fmt(debt['amount'])} ({action})\n\n"
+            "Chọn hình thức thanh toán:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML"
+        )
+        return DEBT_ACTION
+
+    if query.data.startswith("dpayfull_"):
+        debt_id = int(query.data.replace("dpayfull_", ""))
         success = db.mark_debt_paid(debt_id, user.id)
         if success:
-            await query.edit_message_text(f"✅ Đã đánh dấu khoản <code>#{debt_id}</code> là <b>đã trả</b>! 🎉", parse_mode="HTML")
+            await query.edit_message_text(f"✅ Đã trả hết khoản <code>#{debt_id}</code>! 🎉", parse_mode="HTML")
         else:
             await query.edit_message_text("❌ Không tìm thấy khoản nợ.")
         return ConversationHandler.END
+
+    if query.data.startswith("dpaypart_"):
+        debt_id = int(query.data.replace("dpaypart_", ""))
+        context.user_data["debt_pay_id"] = debt_id
+        debts = db.get_debts(user.id, paid=0)
+        debt = next((d for d in debts if d["id"] == debt_id), None)
+        await query.edit_message_text(
+            f"💰 Còn nợ: <b>{fmt(debt['amount'])}</b>\n\n"
+            "Nhập số tiền muốn trả lần này:",
+            parse_mode="HTML"
+        )
+        return DEBT_PART_PAY
 
     if query.data == "debt_history":
         debts = db.get_debts(user.id, paid=1)
@@ -1053,5 +1090,42 @@ async def handle_debt_due(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Dùng /no để xem tổng quan.",
         parse_mode="HTML"
     )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def handle_debt_partial_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    text = update.message.text.strip().replace(",", "").replace(".", "")
+    try:
+        pay_amount = float(text)
+        if pay_amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Số tiền không hợp lệ. Nhập lại:")
+        return DEBT_PART_PAY
+
+    debt_id = context.user_data.get("debt_pay_id")
+    result = db.partial_pay_debt(debt_id, user.id, pay_amount)
+
+    if result is None:
+        await update.message.reply_text("❌ Không tìm thấy khoản nợ.")
+        return ConversationHandler.END
+
+    if result["paid_full"]:
+        await update.message.reply_text(
+            f"🎉 <b>Đã trả hết!</b>\n\n"
+            f"💵 Trả: <b>{fmt(pay_amount)}</b>\n"
+            f"✅ Khoản nợ <code>#{debt_id}</code> đã tất toán!",
+            parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            f"✅ <b>Đã ghi nhận thanh toán</b>\n\n"
+            f"💵 Trả lần này: <b>{fmt(pay_amount)}</b>\n"
+            f"🔴 Còn lại: <b>{fmt(result['remaining'])}</b>\n\n"
+            "Dùng /no để xem toàn bộ khoản nợ.",
+            parse_mode="HTML"
+        )
+
     context.user_data.clear()
     return ConversationHandler.END
